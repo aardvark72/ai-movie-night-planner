@@ -1,15 +1,21 @@
 -- AI Movie Night Planner - Database Schema
 -- Lakebase Postgres Database: movie_night
--- Schema: public
+-- Schema: movie_night
 
 -- Enable pgvector extension for vector similarity search
 CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Create dedicated schema
+CREATE SCHEMA IF NOT EXISTS movie_night;
+
+-- Set search path to prioritize movie_night schema
+SET search_path TO movie_night, public;
 
 -- ============================================================================
 -- TABLE: users
 -- Stores user profiles and preferences
 -- ============================================================================
-CREATE TABLE users (
+CREATE TABLE movie_night.users (
     user_id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -22,7 +28,7 @@ CREATE TABLE users (
 -- TABLE: groups
 -- Viewing groups created by users
 -- ============================================================================
-CREATE TABLE groups (
+CREATE TABLE movie_night.groups (
     group_id SERIAL PRIMARY KEY,
     group_name VARCHAR(200) NOT NULL,
     description TEXT,
@@ -35,7 +41,7 @@ CREATE TABLE groups (
 -- TABLE: group_members
 -- Many-to-many relationship between users and groups
 -- ============================================================================
-CREATE TABLE group_members (
+CREATE TABLE movie_night.group_members (
     group_member_id SERIAL PRIMARY KEY,
     group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
@@ -48,7 +54,7 @@ CREATE TABLE group_members (
 -- TABLE: movies
 -- Core movie data from TMDB with embeddings for semantic search
 -- ============================================================================
-CREATE TABLE movies (
+CREATE TABLE movie_night.movies (
     movie_id SERIAL PRIMARY KEY,
     tmdb_id INTEGER UNIQUE NOT NULL,
     title VARCHAR(500) NOT NULL,
@@ -92,16 +98,16 @@ CREATE TABLE movies (
 );
 
 -- Indexes for movies table
-CREATE INDEX idx_movies_tmdb_id ON movies(tmdb_id);
-CREATE INDEX idx_movies_release_date ON movies(release_date);
-CREATE INDEX idx_movies_genres ON movies USING GIN(genres);
-CREATE INDEX idx_movies_content_embedding ON movies USING hnsw(content_embedding vector_cosine_ops);
+CREATE INDEX idx_movies_tmdb_id ON movie_night.movies(tmdb_id);
+CREATE INDEX idx_movies_release_date ON movie_night.movies(release_date);
+CREATE INDEX idx_movies_genres ON movie_night.movies USING GIN(genres);
+CREATE INDEX idx_movies_content_embedding ON movie_night.movies USING hnsw(content_embedding vector_cosine_ops);
 
 -- ============================================================================
 -- TABLE: ratings
 -- User ratings for movies
 -- ============================================================================
-CREATE TABLE ratings (
+CREATE TABLE movie_night.ratings (
     rating_id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
     movie_id INTEGER REFERENCES movies(movie_id) ON DELETE CASCADE,
@@ -112,14 +118,14 @@ CREATE TABLE ratings (
     UNIQUE(user_id, movie_id)
 );
 
-CREATE INDEX idx_ratings_user ON ratings(user_id);
-CREATE INDEX idx_ratings_movie ON ratings(movie_id);
+CREATE INDEX idx_ratings_user ON movie_night.ratings(user_id);
+CREATE INDEX idx_ratings_movie ON movie_night.ratings(movie_id);
 
 -- ============================================================================
 -- TABLE: watchlist_items
 -- Movies added to group watchlists
 -- ============================================================================
-CREATE TABLE watchlist_items (
+CREATE TABLE movie_night.watchlist_items (
     watchlist_id SERIAL PRIMARY KEY,
     group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
     movie_id INTEGER REFERENCES movies(movie_id) ON DELETE CASCADE,
@@ -132,14 +138,14 @@ CREATE TABLE watchlist_items (
     UNIQUE(group_id, movie_id)
 );
 
-CREATE INDEX idx_watchlist_group ON watchlist_items(group_id);
-CREATE INDEX idx_watchlist_watched ON watchlist_items(watched);
+CREATE INDEX idx_watchlist_group ON movie_night.watchlist_items(group_id);
+CREATE INDEX idx_watchlist_watched ON movie_night.watchlist_items(watched);
 
 -- ============================================================================
 -- TABLE: recommendations
 -- Agent-generated recommendations with explanations
 -- ============================================================================
-CREATE TABLE recommendations (
+CREATE TABLE movie_night.recommendations (
     recommendation_id SERIAL PRIMARY KEY,
     group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
     movie_id INTEGER REFERENCES movies(movie_id) ON DELETE CASCADE,
@@ -151,8 +157,8 @@ CREATE TABLE recommendations (
     accepted_at TIMESTAMP
 );
 
-CREATE INDEX idx_recommendations_group ON recommendations(group_id);
-CREATE INDEX idx_recommendations_date ON recommendations(recommended_at);
+CREATE INDEX idx_recommendations_group ON movie_night.recommendations(group_id);
+CREATE INDEX idx_recommendations_date ON movie_night.recommendations(recommended_at);
 
 -- ============================================================================
 -- SUMMARY
