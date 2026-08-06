@@ -89,7 +89,7 @@ CREATE TABLE movie_night.movies (
     streaming_providers JSONB,  -- {"Netflix": true, "Hulu": false, ...}
     
     -- Embeddings (for semantic search)
-    content_embedding vector(1536),  -- plot + cast + keywords
+    content_embedding vector(1024),  -- plot + cast + keywords (Databricks GTE-large)
     
     -- Metadata
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

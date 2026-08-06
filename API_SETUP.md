@@ -1,8 +1,8 @@
 # API Setup Guide
 
-Before running the TMDB ingestion pipeline, you need to configure two API keys:
+Before running the TMDB ingestion pipeline, you only need **ONE API key**:
 
-## 1. TMDB API Key (Required)
+## TMDB API Key (Required)
 
 ### Get Your Key:
 1. Go to https://www.themoviedb.org/
@@ -26,26 +26,14 @@ Edit the notebook cell and paste your key directly (don't commit to git):
 TMDB_API_KEY = "your_tmdb_api_key_here"
 ```
 
-## 2. OpenAI API Key (Required for Embeddings)
+## Embeddings - No Setup Required! 🎉
 
-### Get Your Key:
-1. Go to https://platform.openai.com/api-keys
-2. Sign up or log in
-3. Create a new API key
-4. Copy the key (you won't see it again!)
-
-### Store in Databricks Secrets (Recommended):
-```python
-databricks secrets create-scope openai
-databricks secrets put-secret openai api_key
-# Paste your OpenAI API key when prompted
-```
-
-### Or use temporary method:
-Edit the embedding cell and add:
-```python
-openai_api_key = "your_openai_api_key_here"
-```
+The pipeline now uses **Databricks Foundation Model APIs** for generating embeddings:
+- ✅ **No external API key needed**
+- ✅ Native Databricks integration
+- ✅ Free with your workspace
+- ✅ Uses `databricks-gte-large-en` model (1024 dimensions)
+- ✅ Lower latency (stays within Databricks)
 
 ## Cost Estimate
 
@@ -53,27 +41,19 @@ openai_api_key = "your_openai_api_key_here"
 - **Free**: 40 requests per 10 seconds
 - No cost for any number of movies
 
-### OpenAI Embeddings (text-embedding-ada-002):
-- **$0.0001 per 1,000 tokens**
-- Average movie: ~500 tokens
-- **50 movies ≈ $0.03**
-- **1,000 movies ≈ $0.50**
-- **5,000 movies ≈ $2.50**
+### Databricks Embeddings:
+- **Included with workspace** (Foundation Model APIs)
+- No additional cost! 🎉
 
-## Quick Start (Without Secrets)
+## Quick Start
 
-If you want to test immediately without setting up secrets:
-
-1. Open the notebook: `01_tmdb_ingestion_pipeline`
-2. In Cell 2 (TMDB API Configuration), replace the secrets line with:
+1. Get your TMDB API key from: https://www.themoviedb.org/settings/api
+2. Open the notebook: `01_tmdb_ingestion_pipeline`
+3. In Cell 2 (TMDB API Configuration), replace the secrets line with:
    ```python
    TMDB_API_KEY = "your_key_here"
    ```
-3. In Cell 5 (Embedding Generation), add after the imports:
-   ```python
-   openai_api_key = "your_key_here"
-   ```
-4. Run all cells!
+4. Run all cells! (No other API keys needed)
 
 ## Pipeline Configuration
 
@@ -83,6 +63,7 @@ The pipeline is currently configured to:
 - Minimum votes: 100
 - Process **50 movies** for initial testing
 - Fetch 7 TMDB endpoints per movie (details, credits, keywords, providers, videos)
+- Generate 1024-dim embeddings using Databricks GTE-large model
 
 Edit the configuration in Cell 8 to adjust:
 ```python
@@ -100,7 +81,7 @@ for i, movie_id in enumerate(unique_movie_ids[:50], 1):  # Change 50 to desired 
 ## Troubleshooting
 
 ### "Invalid API key" error:
-- Double-check your API key is correct
+- Double-check your TMDB API key is correct
 - TMDB keys are 32 characters
 - Make sure there are no extra spaces
 
@@ -108,6 +89,6 @@ for i, movie_id in enumerate(unique_movie_ids[:50], 1):  # Change 50 to desired 
 - The pipeline includes automatic rate limiting
 - If you still hit limits, increase `REQUEST_DELAY` in Cell 2
 
-### OpenAI quota errors:
-- Check your OpenAI account has credits: https://platform.openai.com/usage
-- New accounts get $5 free credit
+### Embedding errors:
+- Ensure your workspace has access to Databricks Foundation Model APIs
+- The `databricks-gte-large-en` endpoint should be available by default
