@@ -1,0 +1,35 @@
+# AI Movie Night Planner - Python Dependencies
+
+# Web Framework
+streamlit>=1.28.0
+
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+pgvector>=0.2.4
+
+# Data Processing
+pandas>=2.1.3
+numpy>=1.26.2
+pyspark>=3.5.0
+
+# API Clients
+requests>=2.31.0
+
+# Embeddings & LLM
+openai>=1.3.7
+langchain>=0.1.0
+langchain-openai>=0.0.2
+
+# Databricks
+databricks-sdk>=0.18.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.5.2
+
+# Optional: If using Mosaic AI Agent Framework
+# databricks-agents>=0.1.0
+
+# Optional: Alternative LLM providers
+# anthropic>=0.7.0

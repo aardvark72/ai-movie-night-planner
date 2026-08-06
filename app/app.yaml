@@ -1,0 +1,34 @@
+# Databricks App Configuration
+# AI Movie Night Planner
+
+name: movie-night-planner
+
+command:
+  - streamlit
+  - run
+  - app.py
+  - --server.port=8080
+  - --server.address=0.0.0.0
+
+env:
+  # API Keys (stored in Databricks secrets)
+  - name: TMDB_API_KEY
+    value: "{{secrets/api-keys/tmdb_api_key}}"
+  
+  - name: OPENAI_API_KEY
+    value: "{{secrets/api-keys/openai_api_key}}"
+  
+  # Lakebase Configuration
+  - name: LAKEBASE_PROJECT
+    value: "movie-night"
+  
+  - name: LAKEBASE_BRANCH
+    value: "production"
+  
+  - name: LAKEBASE_DATABASE
+    value: "movie_night"
+
+# Optional: Specify resource requirements
+# resources:
+#   memory: "2Gi"
+#   cpu: "1"
