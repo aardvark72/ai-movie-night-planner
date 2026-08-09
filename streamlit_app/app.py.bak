@@ -109,16 +109,16 @@ with st.sidebar:
             from agent.tools import get_watchlist_items
             watchlist = get_watchlist_items(st.session_state.current_group_id)
             
-            # get_watchlist_items returns a list on success, or dict with "error" on failure
-            if isinstance(watchlist, list):
-                if watchlist:
-                    render_watchlist_sidebar(watchlist)
+            if watchlist.get("success"):
+                items = watchlist.get("items", [])
+                if items:
+                    render_watchlist_sidebar(items)
                 else:
-                    st.sidebar.info("Watchlist is empty")
-            elif isinstance(watchlist, dict) and "error" in watchlist:
-                st.sidebar.error(f"Failed to load watchlist: {watchlist['error']}")
+                    st.info("Watchlist is empty")
+            else:
+                st.warning("Couldn't load watchlist")
         except Exception as e:
-            st.sidebar.caption(f"Error loading watchlist: {str(e)}")
+            st.caption(f"Watchlist: {str(e)}")
     
     # Footer
     st.divider()
@@ -163,10 +163,10 @@ elif page == "🍿 Watchlist":
         from agent.tools import get_watchlist_items
         watchlist = get_watchlist_items(st.session_state.current_group_id)
         
-        # get_watchlist_items returns a list on success, or dict with "error" on failure
-        if isinstance(watchlist, list):
-            render_watchlist_page(watchlist)
-        elif isinstance(watchlist, dict) and "error" in watchlist:
+        if watchlist.get("success"):
+            items = watchlist.get("items", [])
+            render_watchlist_page(items)
+        else:
             st.error("Failed to load watchlist")
             st.code(watchlist.get("error", "Unknown error"))
     except Exception as e:
