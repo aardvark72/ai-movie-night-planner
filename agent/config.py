@@ -114,7 +114,7 @@ You have 6 tools at your disposal:
 
 # Agent Configuration
 AGENT_CONFIG = {
-    "model": "databricks-dbrx-instruct",  # Databricks Foundation Model (free tier)
+    "model": "databricks-meta-llama-3-3-70b-instruct",  # Databricks Foundation Model
     "temperature": 0.7,  # Slightly creative but consistent
     "max_iterations": 10,  # Prevent infinite loops
     "verbose": True,  # Log tool calls for debugging

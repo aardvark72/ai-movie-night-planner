@@ -35,7 +35,7 @@ from agent.tools import (
 class ChatDatabricks(BaseChatModel):
     """Custom Databricks Foundation Model chat wrapper with tool calling support."""
     
-    endpoint: str = "databricks-dbrx-instruct"
+    endpoint: str = "databricks-meta-llama-3-3-70b-instruct"
     temperature: float = 0.7
     max_tokens: int = 2000
     tools: Optional[List[Dict[str, Any]]] = None
@@ -93,34 +93,14 @@ class ChatDatabricks(BaseChatModel):
             "max_tokens": self.max_tokens
         }
         
-        # Add tools if bound
-        if self.tools:
-            payload["tools"] = self.tools
-            payload["tool_choice"] = "auto"
-        
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
         
         result = response.json()
-        response_message = result["choices"][0]["message"]
+        content = result["choices"][0]["message"]["content"]
         
-        # Extract content and tool calls
-        content = response_message.get("content") or ""
-        tool_calls_data = response_message.get("tool_calls", [])
-        
-        # Build AIMessage with tool calls if present
-        if tool_calls_data:
-            tool_calls = []
-            for tc in tool_calls_data:
-                tool_calls.append({
-                    "name": tc["function"]["name"],
-                    "args": json.loads(tc["function"]["arguments"]),
-                    "id": tc.get("id", f"call_{tc['function']['name']}")
-                })
-            message = AIMessage(content=content, tool_calls=tool_calls)
-        else:
-            message = AIMessage(content=content)
-        
+        # Return as ChatResult
+        message = AIMessage(content=content)
         generation = ChatGeneration(message=message)
         return ChatResult(generations=[generation])
     
@@ -337,9 +317,9 @@ def call_model(state: AgentState):
     messages = state["messages"]
     
     # Initialize Databricks Foundation Model
-    # Using DBRX-Instruct which is free and very capable
+    # Using Llama 3.3 70B Instruct - excellent for agents and tool calling
     model = ChatDatabricks(
-        endpoint="databricks-dbrx-instruct",
+        endpoint="databricks-meta-llama-3-3-70b-instruct",
         temperature=AGENT_CONFIG["temperature"],
         max_tokens=2000
     ).bind_tools(TOOLS)
