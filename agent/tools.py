@@ -216,7 +216,7 @@ def get_watchlist_items(group_id: int) -> List[Dict[str, Any]]:
     try:
         query = """
             SELECT 
-                w.id,
+                w.watchlist_id,
                 w.movie_id,
                 m.title,
                 m.release_year,
@@ -224,11 +224,11 @@ def get_watchlist_items(group_id: int) -> List[Dict[str, Any]]:
                 m.runtime_minutes,
                 w.notes,
                 w.priority,
-                w.added_at
+                w.created_at
             FROM watchlist_items w
             JOIN movies m ON w.movie_id = m.movie_id
             WHERE w.group_id = %s
-            ORDER BY w.priority DESC, w.added_at DESC
+            ORDER BY w.priority DESC, w.created_at DESC
         """
         
         cursor.execute(query, (group_id,))
