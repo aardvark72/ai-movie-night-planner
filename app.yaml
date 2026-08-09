@@ -9,6 +9,8 @@ description: "AI-powered movie recommendations using Databricks Foundation Model
 # Runtime configuration
 runtime:
   python_version: "3.10"
+  dependencies:
+    - requirements.txt
   
 # Entry point
 command:
@@ -42,5 +44,5 @@ resources:
 # Networking
 network:
   ingress:
-    - port: 8000
+    - port: 8080
       protocol: "HTTP"
