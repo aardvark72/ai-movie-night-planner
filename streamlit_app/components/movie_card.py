@@ -40,10 +40,10 @@ def render_movie_card(
         # Left column: Poster
         with col1:
             if poster_url and poster_url.startswith("http"):
-                st.image(poster_url, use_container_width=True)
+                st.image(poster_url, use_column_width=True)
             else:
                 st.image("https://via.placeholder.com/300x450?text=No+Poster", 
-                        use_container_width=True)
+                        use_column_width=True)
         
         # Right column: Details
         with col2:
