@@ -47,19 +47,16 @@ class RecordRatingInput(BaseModel):
 
 def _get_db_connection():
     """Get database connection using environment variables (for Databricks Apps)."""
-    import base64
     import os
     
-    # In Databricks Apps, secrets are injected as environment variables
-    encoded_url = os.environ.get('LAKEBASE_CONNECTION_URL')
+    # In Databricks Apps, connection URL is set directly in environment
+    connection_url = os.environ.get('LAKEBASE_CONNECTION_URL')
     
-    if not encoded_url:
+    if not connection_url:
         raise ValueError("LAKEBASE_CONNECTION_URL environment variable not set")
     
-    # Decode the base64-encoded URL
-    LAKEBASE_URL = base64.b64decode(encoded_url).decode('utf-8')
-    
-    conn = psycopg2.connect(LAKEBASE_URL)
+    # Connect directly with the URL (no base64 decoding needed)
+    conn = psycopg2.connect(connection_url)
     cursor = conn.cursor()
     cursor.execute("SET search_path TO movie_night, public")
     cursor.close()
