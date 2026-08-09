@@ -166,7 +166,7 @@ def get_agent_response(user_message: str) -> Dict[str, Any]:
     """
     try:
         # Import agent
-        from agent.agent import MovieAgent
+        from agent import MovieAgent
         
         # Create agent with current group
         agent = MovieAgent(group_id=st.session_state.current_group_id)
@@ -183,8 +183,14 @@ def get_agent_response(user_message: str) -> Dict[str, Any]:
         
     except Exception as e:
         # Fallback response if agent isn't available
+        import traceback
+        error_details = traceback.format_exc()
+        
+        # Log full error for debugging
+        print(f"Agent error: {error_details}")
+        
         return {
-            "content": f"Sorry, I encountered an error: {str(e)}\n\nPlease make sure the agent is properly configured.",
+            "content": f"Sorry, I encountered an error:\n\n```\n{str(e)}\n```\n\n**Error type:** {type(e).__name__}\n\nPlease check the app logs for more details.",
             "movies": []
         }
 

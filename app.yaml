@@ -23,6 +23,8 @@ command:
   - "--server.enableCORS=false"
 
 # Environment variables
+# Note: DATABRICKS_HOST and DATABRICKS_TOKEN are automatically provided
+# by the Databricks Apps runtime and don't need to be declared here
 env:
   # Streamlit config
   - name: STREAMLIT_SERVER_PORT
