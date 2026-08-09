@@ -4,17 +4,18 @@ LangGraph Agent Implementation - Using Databricks Foundation Models
 Main agent orchestrator using LangGraph with Databricks Foundation Model API.
 """
 
-from typing import TypedDict, Annotated, Sequence, List, Dict, Any
+from typing import TypedDict, Annotated, Sequence, List, Dict, Any, Optional
 import operator
 import os
+import json
 import requests
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, ToolCall
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
-from langchain_core.tools import tool
+from langchain_core.tools import tool, BaseTool
 
 from agent.config import AGENT_SYSTEM_PROMPT, AGENT_CONFIG
 from agent.tools import (
@@ -32,11 +33,12 @@ from agent.tools import (
 # ============================================================================
 
 class ChatDatabricks(BaseChatModel):
-    """Custom Databricks Foundation Model chat wrapper."""
+    """Custom Databricks Foundation Model chat wrapper with tool calling support."""
     
     endpoint: str = "databricks-dbrx-instruct"
     temperature: float = 0.7
     max_tokens: int = 2000
+    tools: Optional[List[Dict[str, Any]]] = None
     
     def _generate(
         self,
@@ -57,7 +59,27 @@ class ChatDatabricks(BaseChatModel):
             if isinstance(msg, HumanMessage):
                 formatted_messages.append({"role": "user", "content": msg.content})
             elif isinstance(msg, AIMessage):
-                formatted_messages.append({"role": "assistant", "content": msg.content})
+                msg_dict = {"role": "assistant", "content": msg.content or ""}
+                # Include tool calls if present
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    msg_dict["tool_calls"] = [
+                        {
+                            "id": tc.get("id", f"call_{i}"),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("name", ""),
+                                "arguments": json.dumps(tc.get("args", {}))
+                            }
+                        }
+                        for i, tc in enumerate(msg.tool_calls)
+                    ]
+                formatted_messages.append(msg_dict)
+            elif isinstance(msg, ToolMessage):
+                formatted_messages.append({
+                    "role": "tool",
+                    "tool_call_id": msg.tool_call_id,
+                    "content": msg.content
+                })
         
         # Call Databricks serving endpoint
         url = f"https://{host}/serving-endpoints/{self.endpoint}/invocations"
@@ -71,14 +93,34 @@ class ChatDatabricks(BaseChatModel):
             "max_tokens": self.max_tokens
         }
         
+        # Add tools if bound
+        if self.tools:
+            payload["tools"] = self.tools
+            payload["tool_choice"] = "auto"
+        
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
         
         result = response.json()
-        content = result["choices"][0]["message"]["content"]
+        response_message = result["choices"][0]["message"]
         
-        # Return as ChatResult
-        message = AIMessage(content=content)
+        # Extract content and tool calls
+        content = response_message.get("content") or ""
+        tool_calls_data = response_message.get("tool_calls", [])
+        
+        # Build AIMessage with tool calls if present
+        if tool_calls_data:
+            tool_calls = []
+            for tc in tool_calls_data:
+                tool_calls.append({
+                    "name": tc["function"]["name"],
+                    "args": json.loads(tc["function"]["arguments"]),
+                    "id": tc.get("id", f"call_{tc['function']['name']}")
+                })
+            message = AIMessage(content=content, tool_calls=tool_calls)
+        else:
+            message = AIMessage(content=content)
+        
         generation = ChatGeneration(message=message)
         return ChatResult(generations=[generation])
     
@@ -107,6 +149,35 @@ class ChatDatabricks(BaseChatModel):
     @property
     def _llm_type(self) -> str:
         return "databricks"
+    
+    def bind_tools(self, tools: List[BaseTool], **kwargs: Any) -> "ChatDatabricks":
+        """Bind tools to this chat model for function calling."""
+        # Convert LangChain tools to OpenAI format
+        formatted_tools = []
+        for tool in tools:
+            # Get tool schema
+            tool_schema = tool.args_schema.schema() if hasattr(tool, 'args_schema') and tool.args_schema else {}
+            
+            formatted_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": {
+                        "type": "object",
+                        "properties": tool_schema.get("properties", {}),
+                        "required": tool_schema.get("required", [])
+                    }
+                }
+            })
+        
+        # Create a new instance with tools
+        return ChatDatabricks(
+            endpoint=self.endpoint,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            tools=formatted_tools
+        )
 
 
 # ============================================================================
