@@ -225,7 +225,7 @@ def get_watchlist_items(group_id: int) -> List[Dict[str, Any]]:
                 w.notes,
                 w.priority,
                 w.added_at
-            FROM watchlist w
+            FROM watchlist_items w
             JOIN movies m ON w.movie_id = m.id
             WHERE w.group_id = %s
             ORDER BY w.priority DESC, w.added_at DESC
