@@ -24,6 +24,88 @@ from agent.tools import (
 
 
 # ============================================================================
+# Custom ChatDatabricks Implementation
+# ============================================================================
+
+class ChatDatabricks(BaseChatModel):
+    """Simple Databricks Foundation Model chat wrapper."""
+    
+    endpoint: str = "databricks-dbrx-instruct"
+    temperature: float = 0.7
+    max_tokens: int = 2000
+    
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: List[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate chat response using Databricks Foundation Model API."""
+        
+        # Get Databricks credentials from environment
+        host = os.environ.get("DATABRICKS_HOST")
+        token = os.environ.get("DATABRICKS_TOKEN") or self._get_oauth_token()
+        
+        # Convert messages to API format
+        formatted_messages = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                formatted_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                formatted_messages.append({"role": "assistant", "content": msg.content})
+        
+        # Call Databricks serving endpoint
+        url = f"https://{host}/serving-endpoints/{self.endpoint}/invocations"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "messages": formatted_messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
+        }
+        
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # Return as ChatResult
+        message = AIMessage(content=content)
+        generation = ChatGeneration(message=message)
+        return ChatResult(generations=[generation])
+    
+    def _get_oauth_token(self) -> str:
+        """Get OAuth token from Databricks Apps environment."""
+        client_id = os.environ.get("DATABRICKS_CLIENT_ID")
+        client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET")
+        host = os.environ.get("DATABRICKS_HOST")
+        
+        if not all([client_id, client_secret, host]):
+            raise ValueError("Missing Databricks credentials in environment")
+        
+        # Get OAuth token
+        token_url = f"https://{host}/oidc/v1/token"
+        token_response = requests.post(
+            token_url,
+            data={
+                "grant_type": "client_credentials",
+                "scope": "all-apis"
+            },
+            auth=(client_id, client_secret)
+        )
+        token_response.raise_for_status()
+        return token_response.json()["access_token"]
+    
+    @property
+    def _llm_type(self) -> str:
+        return "databricks"
+
+
+# ============================================================================
 # Agent State
 # ============================================================================
 
