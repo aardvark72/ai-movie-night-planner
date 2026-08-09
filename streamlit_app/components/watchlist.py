@@ -70,12 +70,12 @@ def render_watchlist_item(item: Dict[str, Any]):
     movie_id = item.get("movie_id") or item.get("id")
     title = item.get("title", "Unknown")
     year = item.get("release_year", "")
-    rating = item.get("tmdb_rating", 0)
+    rating = item.get("tmdb_rating")
     priority = item.get("priority", 5)
     notes = item.get("notes")
     
     # Priority indicator
-    priority_emoji = "🔥" if priority >= 8 else "⭐" if priority >= 5 else "📌"
+    priority_emoji = "🔥" if priority and priority >= 8 else "⭐" if priority and priority >= 5 else "📌"
     
     with st.container():
         # Title and basic info
@@ -83,12 +83,17 @@ def render_watchlist_item(item: Dict[str, Any]):
         
         col1, col2 = st.columns(2)
         with col1:
-            st.caption(f"📅 {year}")
+            st.caption(f"📅 {year if year else 'N/A'}")
         with col2:
-            st.caption(f"⭐ {rating:.1f}")
+            # Handle None/0 ratings gracefully
+            if rating and rating > 0:
+                st.caption(f"⭐ {rating:.1f}")
+            else:
+                st.caption("⭐ N/A")
         
-        # Priority bar
-        st.progress(priority / 10, text=f"Priority: {priority}/10")
+        # Priority bar (handle None)
+        priority_value = priority if priority else 5
+        st.progress(priority_value / 10, text=f"Priority: {priority_value}/10")
         
         # Notes
         if notes:

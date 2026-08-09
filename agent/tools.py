@@ -50,11 +50,11 @@ def _get_db_connection():
     """Get database connection using environment variables (for Databricks Apps)."""
     import os
     
-    # In Databricks Apps, connection URL is set directly in environment
-    connection_url = os.environ.get('LAKEBASE_CONNECTION_URL')
+    # In Databricks Apps, connection URL can be in either variable
+    connection_url = os.environ.get('LAKEBASE_CONNECTION_URL') or os.environ.get('LAKEBASE_URL')
     
     if not connection_url:
-        raise ValueError("LAKEBASE_CONNECTION_URL environment variable not set")
+        raise ValueError("LAKEBASE_CONNECTION_URL or LAKEBASE_URL environment variable not set")
     
     # Connect directly with the URL (no base64 decoding needed)
     conn = psycopg2.connect(connection_url)
@@ -219,9 +219,9 @@ def get_watchlist_items(group_id: int) -> List[Dict[str, Any]]:
                 w.watchlist_id,
                 w.movie_id,
                 m.title,
-                m.release_date,
+                m.release_year,
                 m.tmdb_rating,
-                m.runtime,
+                m.runtime_minutes,
                 w.notes,
                 w.priority,
                 w.created_at
@@ -238,7 +238,7 @@ def get_watchlist_items(group_id: int) -> List[Dict[str, Any]]:
             "id": item[0],
             "movie_id": item[1],
             "title": item[2],
-            "release_year": item[3].year if item[3] else None,
+            "release_year": item[3],
             "tmdb_rating": float(item[4]) if item[4] else None,
             "runtime_minutes": item[5],
             "notes": item[6],

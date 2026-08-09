@@ -28,7 +28,7 @@ command:
 env:
   # Streamlit config
   - name: STREAMLIT_SERVER_PORT
-    value: "8080"
+    value: "8000"
   - name: STREAMLIT_SERVER_ADDRESS
     value: "0.0.0.0"
   - name: STREAMLIT_SERVER_HEADLESS
@@ -46,5 +46,5 @@ resources:
 # Networking
 network:
   ingress:
-    - port: 8080
+    - port: 8000
       protocol: "HTTP"
