@@ -1,0 +1,22 @@
+# Test files
+*.ipynb
+test_*.py
+*_test.py
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Development files  
+.env
+.git/
+.gitignore
+*.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Notebooks (except if needed)
+notebooks/

@@ -1,0 +1,432 @@
+# Pipeline cells to add to notebook
+
+
+================================================================================
+# CELL 1: TMDB API Configuration
+# Language: python
+================================================================================
+
+# =============================================================================
+# TMDB API KEY - REQUIRED
+# Get your free key from: https://www.themoviedb.org/settings/api
+# =============================================================================
+
+# Option 1: Use Databricks Secrets (recommended for production)
+try:
+    TMDB_API_KEY = dbutils.secrets.get(scope="tmdb", key="api_key")
+    print("✅ TMDB API key loaded from secrets")
+except:
+    # Option 2: Paste your key here for testing (don't commit to git!)
+    TMDB_API_KEY = ""  # <-- Paste your TMDB API key here
+    
+    if not TMDB_API_KEY:
+        raise ValueError(
+            "❌ TMDB API key not found!\n"
+            "Get your free key from: https://www.themoviedb.org/settings/api\n"
+            "Then either:\n"
+            "  1. Store in secrets: databricks secrets put-secret tmdb api_key\n"
+            "  2. Paste it in the TMDB_API_KEY variable above"
+        )
+    print("⚠️  Using API key from notebook (not recommended for production)")
+
+# Initialize TMDB client
+tmdb = TMDBClient(api_key=TMDB_API_KEY)
+print(f"✅ TMDB client initialized")
+
+
+================================================================================
+# CELL 2: Database Connection
+# Language: python
+================================================================================
+
+# =============================================================================
+# LAKEBASE CONNECTION
+# =============================================================================
+
+# Initialize database connection
+db = LakebaseConnection(
+    project="movie-night-planner",
+    branch="production",
+    endpoint="primary",
+    database="databricks_postgres",
+    schema="movie_night"
+)
+
+# Test connection
+db.connect()
+result = db.query("SELECT COUNT(*) as count FROM movies")
+print(f"✅ Database connected - Current movies in database: {result[0]['count']}")
+
+
+================================================================================
+# CELL 3: Embeddings Setup (Databricks Foundation Model APIs)
+# Language: python
+================================================================================
+
+# =============================================================================
+# EMBEDDINGS - Using Databricks Foundation Model APIs
+# Model: databricks-gte-large-en (1024 dimensions)
+# No external API key needed!
+# =============================================================================
+
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
+
+w = WorkspaceClient()
+
+def generate_embedding(text: str) -> List[float]:
+    """Generate embedding using Databricks Foundation Model API.
+    
+    Args:
+        text: Text to embed
+    
+    Returns:
+        List of 1024 floats
+    """
+    try:
+        response = w.serving_endpoints.query(
+            name="databricks-gte-large-en",
+            inputs=[text]
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"❌ Embedding error: {e}")
+        return None
+
+# Test embedding
+test_embedding = generate_embedding("A thrilling action movie about superheroes")
+if test_embedding:
+    print(f"✅ Embeddings working - Dimension: {len(test_embedding)}")
+else:
+    print("❌ Embedding test failed")
+
+
+================================================================================
+# CELL 4: Discovery Configuration
+# Language: python
+================================================================================
+
+# =============================================================================
+# DISCOVERY CONFIGURATION
+# Adjust these parameters to control what movies are fetched
+# =============================================================================
+
+START_YEAR = 2015
+END_YEAR = 2024
+MIN_RATING = 6.0          # Minimum TMDB rating (0-10)
+MIN_VOTES = 100           # Minimum vote count
+MAX_MOVIES_PER_YEAR = 100 # Maximum movies to fetch per year
+
+print("\n" + "=" * 70)
+print("DISCOVERY CONFIGURATION")
+print("=" * 70)
+print(f"Year Range:       {START_YEAR} - {END_YEAR}")
+print(f"Min Rating:       {MIN_RATING}/10")
+print(f"Min Votes:        {MIN_VOTES}")
+print(f"Max Per Year:     {MAX_MOVIES_PER_YEAR}")
+print(f"Estimated Total:  {(END_YEAR - START_YEAR + 1) * MAX_MOVIES_PER_YEAR} movies max")
+print("=" * 70)
+
+
+================================================================================
+# CELL 5: Step 1: Discover Movies
+# Language: python
+================================================================================
+
+# =============================================================================
+# STEP 1: DISCOVER MOVIES
+# Fetch movie IDs from TMDB using the discover API
+# =============================================================================
+
+all_movie_ids = []
+
+for year in range(START_YEAR, END_YEAR + 1):
+    print(f"\n🔍 Discovering movies from {year}...")
+    
+    movies_this_year = []
+    page = 1
+    max_pages = 5  # TMDB returns ~20 movies per page, so 5 pages = ~100 movies
+    
+    while page <= max_pages and len(movies_this_year) < MAX_MOVIES_PER_YEAR:
+        response = tmdb.discover_movies(
+            year=year,
+            min_rating=MIN_RATING,
+            min_votes=MIN_VOTES,
+            page=page
+        )
+        
+        movies = response.get('results', [])
+        if not movies:
+            break
+        
+        for movie in movies:
+            movies_this_year.append(movie['id'])
+            if len(movies_this_year) >= MAX_MOVIES_PER_YEAR:
+                break
+        
+        page += 1
+    
+    print(f"   Found {len(movies_this_year)} movies")
+    all_movie_ids.extend(movies_this_year)
+
+# Remove duplicates
+unique_movie_ids = list(set(all_movie_ids))
+
+print(f"\n" + "=" * 70)
+print(f"✅ DISCOVERY COMPLETE")
+print(f"   Total movies discovered: {len(unique_movie_ids)}")
+print("=" * 70)
+
+
+================================================================================
+# CELL 6: Step 2: Fetch Full Movie Details
+# Language: python
+================================================================================
+
+# =============================================================================
+# STEP 2: FETCH FULL MOVIE DETAILS
+# Get complete data for each movie (7 API calls per movie)
+# =============================================================================
+
+movies_data = []
+failed_movies = []
+
+# For initial testing, process first 50 movies
+# Change 50 to len(unique_movie_ids) to process all
+BATCH_SIZE = 50
+
+print(f"\n🎬 Fetching details for {min(BATCH_SIZE, len(unique_movie_ids))} movies...")
+print(f"   (7 API calls per movie: details, credits, keywords, videos, providers, ratings)")
+print()
+
+for i, movie_id in enumerate(unique_movie_ids[:BATCH_SIZE], 1):
+    try:
+        # Fetch all movie data
+        movie = tmdb.get_movie_full(movie_id)
+        
+        if movie and movie.get('tmdb_id'):
+            movies_data.append(movie)
+            
+            # Progress indicator
+            if i % 10 == 0:
+                print(f"   [{i}/{min(BATCH_SIZE, len(unique_movie_ids))}] Fetched: {movie['title']} ({movie.get('release_date', 'N/A')[:4]})")
+        else:
+            failed_movies.append(movie_id)
+    
+    except Exception as e:
+        print(f"   ❌ Error fetching movie {movie_id}: {e}")
+        failed_movies.append(movie_id)
+
+print(f"\n" + "=" * 70)
+print(f"✅ FETCH COMPLETE")
+print(f"   Movies fetched:  {len(movies_data)}")
+print(f"   Failed:          {len(failed_movies)}")
+print("=" * 70)
+
+# Show sample
+if movies_data:
+    sample = movies_data[0]
+    print(f"\n📋 Sample Movie:")
+    print(f"   Title:     {sample['title']}")
+    print(f"   Year:      {sample.get('release_date', 'N/A')[:4]}")
+    print(f"   Genres:    {', '.join(sample.get('genres', []))}")
+    print(f"   Director:  {sample.get('director', 'N/A')}")
+    print(f"   Rating:    {sample.get('tmdb_rating', 'N/A')}/10")
+
+
+================================================================================
+# CELL 7: Step 3: Generate Embeddings
+# Language: python
+================================================================================
+
+# =============================================================================
+# STEP 3: GENERATE EMBEDDINGS
+# Create vector embeddings for semantic search
+# =============================================================================
+
+print(f"\n🧠 Generating embeddings using Databricks GTE-large model...")
+print(f"   Model: databricks-gte-large-en (1024 dimensions)")
+print()
+
+movies_with_embeddings = []
+embedding_failures = []
+
+for i, movie in enumerate(movies_data, 1):
+    try:
+        # Create embedding text from overview + tagline + genres + keywords + cast
+        embedding_text_parts = []
+        
+        if movie.get('overview'):
+            embedding_text_parts.append(movie['overview'])
+        
+        if movie.get('tagline'):
+            embedding_text_parts.append(movie['tagline'])
+        
+        if movie.get('genres'):
+            embedding_text_parts.append(f"Genres: {', '.join(movie['genres'])}")
+        
+        if movie.get('keywords'):
+            embedding_text_parts.append(f"Keywords: {', '.join(movie['keywords'][:10])}")
+        
+        if movie.get('cast_names'):
+            embedding_text_parts.append(f"Cast: {', '.join(movie['cast_names'][:5])}")
+        
+        embedding_text = " | ".join(embedding_text_parts)
+        
+        # Generate embedding
+        embedding = generate_embedding(embedding_text)
+        
+        if embedding and len(embedding) == 1024:
+            movie['embedding'] = embedding
+            movie['embedding_text'] = embedding_text
+            movies_with_embeddings.append(movie)
+            
+            if i % 10 == 0:
+                print(f"   [{i}/{len(movies_data)}] Generated embedding for: {movie['title']}")
+        else:
+            print(f"   ❌ Invalid embedding for: {movie['title']}")
+            embedding_failures.append(movie['title'])
+    
+    except Exception as e:
+        print(f"   ❌ Error generating embedding for {movie['title']}: {e}")
+        embedding_failures.append(movie['title'])
+
+print(f"\n" + "=" * 70)
+print(f"✅ EMBEDDINGS GENERATED")
+print(f"   Success:  {len(movies_with_embeddings)}")
+print(f"   Failed:   {len(embedding_failures)}")
+print("=" * 70)
+
+
+================================================================================
+# CELL 8: Step 4: Load to Database
+# Language: python
+================================================================================
+
+# =============================================================================
+# STEP 4: LOAD TO DATABASE
+# Insert movies with embeddings into Lakebase
+# =============================================================================
+
+print(f"\n💾 Loading {len(movies_with_embeddings)} movies to database...")
+print()
+
+inserted_count = 0
+updated_count = 0
+failed_inserts = []
+
+for i, movie in enumerate(movies_with_embeddings, 1):
+    try:
+        # Check if movie already exists
+        existing = db.query(
+            "SELECT movie_id FROM movies WHERE tmdb_id = %s",
+            (movie['tmdb_id'],)
+        )
+        
+        is_update = len(existing) > 0
+        
+        # Insert movie data
+        movie_id = insert_movie(db, movie)
+        
+        # Update embedding separately (pgvector type needs special handling)
+        if movie_id and movie.get('embedding'):
+            db.execute(
+                "UPDATE movies SET embedding = %s WHERE movie_id = %s",
+                (movie['embedding'], movie_id),
+                commit=True
+            )
+        
+        if is_update:
+            updated_count += 1
+        else:
+            inserted_count += 1
+        
+        if i % 10 == 0:
+            print(f"   [{i}/{len(movies_with_embeddings)}] Loaded: {movie['title']}")
+    
+    except Exception as e:
+        print(f"   ❌ Failed to insert {movie['title']}: {e}")
+        failed_inserts.append(movie['title'])
+
+db.commit()
+
+print(f"\n" + "=" * 70)
+print(f"✅ DATABASE LOAD COMPLETE")
+print(f"   Inserted:  {inserted_count}")
+print(f"   Updated:   {updated_count}")
+print(f"   Failed:    {len(failed_inserts)}")
+print("=" * 70)
+
+
+================================================================================
+# CELL 9: Verification & Summary
+# Language: python
+================================================================================
+
+# =============================================================================
+# VERIFICATION & SUMMARY
+# =============================================================================
+
+# Get final counts
+total_movies = db.query("SELECT COUNT(*) as count FROM movies")[0]['count']
+movies_with_embeddings_count = db.query(
+    "SELECT COUNT(*) as count FROM movies WHERE embedding IS NOT NULL"
+)[0]['count']
+
+# Get sample movies
+sample_movies = db.query("""
+    SELECT 
+        title, 
+        release_date,
+        ARRAY_TO_STRING(genres, ', ') as genres,
+        tmdb_rating,
+        director,
+        CASE WHEN embedding IS NOT NULL THEN '✅' ELSE '❌' END as has_embedding
+    FROM movies
+    ORDER BY created_at DESC
+    LIMIT 10
+""")
+
+print("\n" + "=" * 70)
+print("🎉 PIPELINE COMPLETE")
+print("=" * 70)
+print(f"Total movies in database:     {total_movies}")
+print(f"Movies with embeddings:       {movies_with_embeddings_count}")
+print(f"Coverage:                     {100 * movies_with_embeddings_count / max(total_movies, 1):.1f}%")
+print("=" * 70)
+
+print("\n📋 Latest Movies Added:")
+print("-" * 70)
+for movie in sample_movies:
+    year = movie['release_date'][:4] if movie['release_date'] else 'N/A'
+    print(f"{movie['has_embedding']} {movie['title']:40} ({year}) - {movie['tmdb_rating']}/10")
+
+# Test vector search
+print("\n🔍 Testing Vector Search...")
+test_query = "space adventure with aliens"
+test_embedding = generate_embedding(test_query)
+
+if test_embedding:
+    results = db.query("""
+        SELECT 
+            title,
+            release_date,
+            tmdb_rating,
+            1 - (embedding <=> %s::vector) as similarity
+        FROM movies
+        WHERE embedding IS NOT NULL
+        ORDER BY embedding <=> %s::vector
+        LIMIT 5
+    """, (test_embedding, test_embedding))
+    
+    print(f"\nQuery: '{test_query}'")
+    print("-" * 70)
+    for r in results:
+        year = r['release_date'][:4] if r['release_date'] else 'N/A'
+        print(f"  {r['similarity']:.3f} - {r['title']} ({year}) - {r['tmdb_rating']}/10")
+
+print("\n✅ All tests passed! Database ready for the AI agent.")
+
+# Close connection
+db.close()
+

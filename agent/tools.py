@@ -42,22 +42,104 @@ class RecordRatingInput(BaseModel):
 
 
 # ============================================================================
+# Helper Functions  
+# ============================================================================
+
+def _get_db_connection():
+    """Get database connection using environment variables (for Databricks Apps)."""
+    import base64
+    import os
+    
+    # In Databricks Apps, secrets are injected as environment variables
+    encoded_url = os.environ.get('LAKEBASE_CONNECTION_URL')
+    
+    if not encoded_url:
+        raise ValueError("LAKEBASE_CONNECTION_URL environment variable not set")
+    
+    # Decode the base64-encoded URL
+    LAKEBASE_URL = base64.b64decode(encoded_url).decode('utf-8')
+    
+    conn = psycopg2.connect(LAKEBASE_URL)
+    cursor = conn.cursor()
+    cursor.execute("SET search_path TO movie_night, public")
+    cursor.close()
+    return conn
+
+def _generate_embedding(text: str) -> List[float]:
+    """Generate embedding using Databricks Foundation Model API."""
+    import os
+    try:
+        # Try to get from environment variables first (Databricks Apps)
+        host = os.environ.get('DATABRICKS_HOST')
+        token = os.environ.get('DATABRICKS_TOKEN')
+        
+        # Fallback to WorkspaceClient if env vars not available
+        if not host or not token:
+            from databricks.sdk import WorkspaceClient
+            w = WorkspaceClient()
+            host = w.config.host
+            token = w.config.token
+        
+        url = f"{host}/serving-endpoints/databricks-gte-large-en/invocations"
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"input": [text]}
+        )
+        if response.status_code == 200:
+            return response.json().get('data', [{}])[0].get('embedding', [])
+        return None
+    except Exception as e:
+        print(f"Embedding error: {e}")
+        return None
+
+# ============================================================================
 # Tool Implementations
 # ============================================================================
 
 def search_movies(input: SearchMoviesInput) -> Dict[str, Any]:
     """
     Semantic search for movies matching a natural language query.
-    
-    Steps:
-    1. Generate embedding for query
-    2. Query Lakebase with vector similarity + filters
-    3. Exclude movies already watched by group
-    4. Rank by group preferences
-    5. Return top N with explanations
     """
-    # TODO: Implement semantic search
-    pass
+    try:
+        query_embedding = _generate_embedding(input.query)
+        if not query_embedding:
+            return {"error": "Failed to generate embedding"}
+        
+        conn = _get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        sql = """
+            SELECT m.movie_id, m.title, m.release_date, m.runtime, m.overview,
+                   m.genres, m.director, m.cast_names, m.tmdb_rating,
+                   1 - (e.content_embedding <=> %s::vector) as similarity_score
+            FROM movies m
+            JOIN movie_embeddings e ON m.movie_id = e.movie_id
+            WHERE e.content_embedding IS NOT NULL
+        """
+        params = [query_embedding]
+        
+        if input.max_runtime:
+            sql += " AND m.runtime <= %s"
+            params.append(input.max_runtime)
+        if input.min_rating:
+            sql += " AND m.tmdb_rating >= %s"
+            params.append(input.min_rating)
+        if input.group_id:
+            sql += " AND m.movie_id NOT IN (SELECT r.movie_id FROM ratings r JOIN group_members gm ON r.user_id = gm.user_id WHERE gm.group_id = %s)"
+            params.append(input.group_id)
+        
+        sql += " ORDER BY e.content_embedding <=> %s::vector LIMIT %s"
+        params.extend([query_embedding, input.limit])
+        
+        cursor.execute(sql, params)
+        results = [{**dict(row), 'year': row['release_date'].year if row['release_date'] else None} for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        
+        return {"success": True, "query": input.query, "count": len(results), "movies": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def get_group_preferences(group_id: int) -> Dict[str, Any]:

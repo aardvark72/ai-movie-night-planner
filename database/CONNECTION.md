@@ -1,13 +1,15 @@
 # Lakebase Database Connection Details
 
 ## Project Information
-- **Project Name**: movie-night
+- **Project ID**: movie-night-planner
+- **Display Name**: AI Movie Night Planner
+- **Postgres Version**: 17
 - **Branch**: production  
-- **Database**: movienight
+- **Database**: databricks_postgres
 - **Schema**: movie_night
 
 ## Connection Details
-- **Host**: ep-fragrant-waterfall-d8ycnkc8.database.us-east-2.cloud.databricks.com
+- **Host**: ep-steep-glitter-d84ausgo.database.us-east-2.cloud.databricks.com
 - **Port**: 5432
 - **SSL Mode**: require
 
@@ -36,15 +38,15 @@ Use Databricks OAuth tokens for authentication:
 from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
-endpoint = "projects/movie-night/branches/production/endpoints/primary"
+endpoint = "projects/movie-night-planner/branches/production/endpoints/primary"
 cred = w.postgres.generate_database_credential(endpoint=endpoint)
 
 # Connect with psycopg2
 import psycopg2
 conn = psycopg2.connect(
-    host="ep-fragrant-waterfall-d8ycnkc8.database.us-east-2.cloud.databricks.com",
+    host="ep-steep-glitter-d84ausgo.database.us-east-2.cloud.databricks.com",
     port=5432,
-    database="movienight",
+    database="databricks_postgres",
     user="<your-email>",
     password=cred.token,
     sslmode='require'
