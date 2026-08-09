@@ -8,6 +8,7 @@ Defines the 6 tools available to the movie recommendation agent:
 
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
+import psycopg2
 
 
 # ============================================================================
