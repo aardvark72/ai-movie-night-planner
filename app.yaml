@@ -15,13 +15,22 @@ command:
   - "streamlit"
   - "run"
   - "streamlit_app/app.py"
-  - "--server.port=8080"
+  - "--server.port=8000"
   - "--server.address=0.0.0.0"
   - "--server.headless=true"
   - "--server.enableCORS=false"
 
 # Environment variables
 env:
+  # Streamlit config
+  - name: STREAMLIT_SERVER_PORT
+    value: "8080"
+  - name: STREAMLIT_SERVER_ADDRESS
+    value: "0.0.0.0"
+  - name: STREAMLIT_SERVER_HEADLESS
+    value: "true"
+  
+  # Database connection
   - name: LAKEBASE_CONNECTION_URL
     value: "postgresql://admin:npg_Z1Elj0zTJKYH@ep-calm-sound-d3druefy.database.eu-west-1.cloud.databricks.com/databricks_postgres?sslmode=require"
 
@@ -33,5 +42,5 @@ resources:
 # Networking
 network:
   ingress:
-    - port: 8080
+    - port: 8000
       protocol: "HTTP"
