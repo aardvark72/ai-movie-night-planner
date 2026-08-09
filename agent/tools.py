@@ -202,6 +202,59 @@ def compare_movies(movie_ids: List[int], group_id: int) -> Dict[str, Any]:
     pass
 
 
+def get_watchlist_items(group_id: int) -> List[Dict[str, Any]]:
+    """
+    Get all watchlist items for a group.
+    
+    Args:
+        group_id: The group ID
+        
+    Returns:
+        List of watchlist items with movie details
+    """
+    conn = _get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        query = """
+            SELECT 
+                w.id,
+                w.movie_id,
+                m.title,
+                m.release_year,
+                m.tmdb_rating,
+                m.runtime_minutes,
+                w.notes,
+                w.priority,
+                w.added_at
+            FROM watchlist w
+            JOIN movies m ON w.movie_id = m.id
+            WHERE w.group_id = %s
+            ORDER BY w.priority DESC, w.added_at DESC
+        """
+        
+        cursor.execute(query, (group_id,))
+        items = cursor.fetchall()
+        
+        return [{
+            "id": item[0],
+            "movie_id": item[1],
+            "title": item[2],
+            "release_year": item[3],
+            "tmdb_rating": float(item[4]) if item[4] else None,
+            "runtime_minutes": item[5],
+            "notes": item[6],
+            "priority": item[7],
+            "added_at": str(item[8])
+        } for item in items]
+        
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ============================================================================
 # Tool Registry (for LangChain/Agent Framework)
 # ============================================================================
