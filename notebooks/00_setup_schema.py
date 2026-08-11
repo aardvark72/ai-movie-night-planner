@@ -34,46 +34,65 @@
 
 # DBTITLE 1,Install dependencies
 # Install required packages
-%pip install psycopg2-binary pgvector databricks-sdk --quiet
+# Using pg8000 instead of psycopg2 for serverless compatibility
+%pip install pg8000 pgvector databricks-sdk --quiet
 
 # COMMAND ----------
 
 # DBTITLE 1,Import libraries and setup connection
-import psycopg2
 from databricks.sdk import WorkspaceClient
 
 print("🔑 Loading Lakebase connection from secrets...")
 
 # Get connection URL from secrets
 w = WorkspaceClient()
-secret = w.secrets.get_secret(scope="database", key="movie-lakebase-url")
-
-# Decode the base64-encoded URL
-import base64
 try:
-    LAKEBASE_URL = base64.b64decode(secret.value).decode('utf-8')
-except:
-    # If decode fails, it might already be decoded
-    LAKEBASE_URL = secret.value
+    LAKEBASE_URL = dbutils.secrets.get(scope="database", key="movie-lakebase-url")
+    print(f"✅ Connection URL loaded from secrets")
+    
+    # Parse connection URL to show host
+    if '@' in LAKEBASE_URL:
+        host_part = LAKEBASE_URL.split('@')[1].split('/')[0]
+        print(f"   Host: {host_part}")
+except Exception as e:
+    print(f"❌ Failed to load secret: {e}")
+    print("\nMake sure to run the 00_setup_secrets notebook first!")
+    raise
 
-print(f"✅ Connection URL loaded")
-print(f"   Host: {LAKEBASE_URL.split('@')[1].split('/')[0] if '@' in LAKEBASE_URL else 'configured'}")
+print("\n✅ Setup complete!")
+print("\nNote: Connection will be established when running SQL files.")
+print("If you encounter connection issues, check:")
+print("  1. Lakebase instance is running")
+print("  2. Connection URL format is correct")
+print("  3. Credentials are valid")
 
-# Test connection
-print("\n🔌 Testing connection...")
-conn = psycopg2.connect(LAKEBASE_URL, connect_timeout=10)
-cursor = conn.cursor()
-cursor.execute("SELECT version()")
-version = cursor.fetchone()[0]
-cursor.close()
-conn.close()
+# COMMAND ----------
 
-print(f"✅ Connection successful!")
-print(f"   PostgreSQL: {version[:50]}...")
+# DBTITLE 1,Debug: Verify password in URL
+import urllib.parse
+
+# Debug: Check if password is in the URL
+parsed = urllib.parse.urlparse(LAKEBASE_URL)
+print("\n🔍 Debugging connection URL:")
+print(f"  Username: {parsed.username}")
+print(f"  Password: {'***PRESENT***' if parsed.password else '❌ MISSING'}")
+if parsed.password:
+    print(f"  Password length: {len(parsed.password)} characters")
+print(f"  Hostname: {parsed.hostname}")
+print(f"  Database: {parsed.path.lstrip('/').split('?')[0]}")
+
+if not parsed.password:
+    print("\n⚠️ ERROR: No password in connection URL!")
+    print("\nThe secret 'database/movie-lakebase-url' needs to be updated.")
+    print("Expected format: postgresql://username:password@host:port/database?sslmode=require")
+    print("\nPlease run the 00_setup_secrets notebook again with the updated .env file.")
 
 # COMMAND ----------
 
 # DBTITLE 1,Helper function to run SQL files
+import pg8000.native
+import urllib.parse
+
 def run_sql_file(filename: str):
     """Execute a SQL file against Lakebase."""
     sql_path = f"/Workspace/Users/{w.current_user.me().user_name}/ai-movie-night-planner/sql/{filename}"
@@ -86,27 +105,36 @@ def run_sql_file(filename: str):
     with open(sql_path, 'r') as f:
         sql_content = f.read()
     
-    # Connect and execute
-    conn = psycopg2.connect(LAKEBASE_URL)
+    # Parse connection URL for pg8000
+    # Format: postgresql://user:password@host:port/database?params
+    parsed = urllib.parse.urlparse(LAKEBASE_URL)
+    
+    # Extract and decode credentials (URL may have encoded special characters)
+    username = urllib.parse.unquote(parsed.username) if parsed.username else None
+    password = urllib.parse.unquote(parsed.password) if parsed.password else None
+    database = parsed.path.lstrip('/').split('?')[0]
+    
+    # Parse SSL parameters from query string
+    params = urllib.parse.parse_qs(parsed.query)
+    ssl_context = params.get('sslmode', ['require'])[0] != 'disable'
+    
+    # Connect and execute using pg8000
+    conn = pg8000.native.Connection(
+        user=username,
+        password=password,
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        database=database,
+        ssl_context=ssl_context
+    )
+    
     try:
-        with conn.cursor() as cur:
-            # Execute the entire file
-            cur.execute(sql_content)
-            conn.commit()
-            
-            # If there are results, fetch and display them
-            if cur.description:
-                rows = cur.fetchall()
-                if rows:
-                    print(f"\n✅ Results ({len(rows)} rows):")
-                    for row in rows[:10]:  # Show first 10 rows
-                        print(row)
-                    if len(rows) > 10:
-                        print(f"... and {len(rows) - 10} more rows")
-                else:
-                    print("\n✅ Query executed successfully (no results)")
-            else:
-                print("\n✅ SQL executed successfully")
+        # pg8000 native interface uses run() method
+        conn.run(sql_content)
+        print("\n✅ SQL executed successfully")
+    except Exception as e:
+        print(f"\n❌ Error executing SQL: {e}")
+        raise
     finally:
         conn.close()
     
@@ -156,47 +184,71 @@ run_sql_file("07_create_indexes.sql")
 
 # DBTITLE 1,Verification: Check schema
 # Verify all tables were created
-conn = psycopg2.connect(LAKEBASE_URL)
+import pg8000.native
+import urllib.parse
+
+# Parse connection URL for pg8000
+parsed = urllib.parse.urlparse(LAKEBASE_URL)
+
+# Extract and decode credentials
+username = urllib.parse.unquote(parsed.username) if parsed.username else None
+password = urllib.parse.unquote(parsed.password) if parsed.password else None
+database = parsed.path.lstrip('/').split('?')[0]
+
+# Parse SSL parameters from query string
+params = urllib.parse.parse_qs(parsed.query)
+ssl_context = params.get('sslmode', ['require'])[0] != 'disable'
+
+conn = pg8000.native.Connection(
+    user=username,
+    password=password,
+    host=parsed.hostname,
+    port=parsed.port or 5432,
+    database=database,
+    ssl_context=ssl_context
+)
 try:
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'movie_night'
-            ORDER BY table_name
-        """)
-        tables = cur.fetchall()
-        
-        print("\n" + "="*60)
-        print("📋 Database Schema Created Successfully!")
-        print("="*60)
-        print(f"\nTables in 'movie_night' schema ({len(tables)}):")
-        for table in tables:
-            print(f"  ✅ {table[0]}")
-        
-        # Count sample data
-        cur.execute("""
-            SET search_path TO movie_night, public;
-            SELECT 
-                (SELECT COUNT(*) FROM users) as users,
-                (SELECT COUNT(*) FROM groups) as groups,
-                (SELECT COUNT(*) FROM movies) as movies,
-                (SELECT COUNT(*) FROM ratings) as ratings,
-                (SELECT COUNT(*) FROM watchlist_items) as watchlist_items
-        """)
-        counts = cur.fetchone()
-        
+    # Query tables using pg8000 native interface
+    tables = conn.run("""
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'movie_night'
+        ORDER BY table_name
+    """)
+    
+    print("\n" + "="*60)
+    print("📋 Database Schema Created Successfully!")
+    print("="*60)
+    print(f"\nTables in 'movie_night' schema ({len(tables)}):")
+    for table in tables:
+        print(f"  ✅ {table[0]}")
+    
+    # Set search path
+    conn.run("SET search_path TO movie_night, public")
+    
+    # Count sample data
+    counts = conn.run("""
+        SELECT 
+            (SELECT COUNT(*) FROM users) as users,
+            (SELECT COUNT(*) FROM groups) as groups,
+            (SELECT COUNT(*) FROM movies) as movies,
+            (SELECT COUNT(*) FROM ratings) as ratings,
+            (SELECT COUNT(*) FROM watchlist_items) as watchlist_items
+    """)
+    
+    if counts:
+        count_row = counts[0]
         print("\n📊 Sample Data Counts:")
-        print(f"  Users: {counts[0]}")
-        print(f"  Groups: {counts[1]}")
-        print(f"  Movies: {counts[2]}")
-        print(f"  Ratings: {counts[3]}")
-        print(f"  Watchlist Items: {counts[4]}")
-        
-        print("\n✅ Database setup complete!")
-        print("\nNext steps:")
-        print("  1. Run 01_ingest_tmdb_movies.py to fetch movies from TMDB")
-        print("  2. Run 02_generate_embeddings.py to create vector embeddings")
-        print("  3. Deploy the Databricks App")
+        print(f"  Users: {count_row[0]}")
+        print(f"  Groups: {count_row[1]}")
+        print(f"  Movies: {count_row[2]}")
+        print(f"  Ratings: {count_row[3]}")
+        print(f"  Watchlist Items: {count_row[4]}")
+    
+    print("\n✅ Database setup complete!")
+    print("\nNext steps:")
+    print("  1. Run 01_ingest_tmdb_movies.py to fetch movies from TMDB")
+    print("  2. Run 02_generate_embeddings.py to create vector embeddings")
+    print("  3. Deploy the Databricks App")
 finally:
     conn.close()

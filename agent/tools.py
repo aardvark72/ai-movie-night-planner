@@ -51,10 +51,13 @@ def _get_db_connection():
     import os
     
     # In Databricks Apps, connection URL can be in either variable
-    connection_url = os.environ.get('LAKEBASE_CONNECTION_URL') or os.environ.get('LAKEBASE_URL')
+    # Check MOVIE_LAKEBASE_URL first (from app resource 'movie-lakebase-url')
+    connection_url = (os.environ.get('MOVIE_LAKEBASE_URL') or 
+                      os.environ.get('LAKEBASE_CONNECTION_URL') or 
+                      os.environ.get('LAKEBASE_URL'))
     
     if not connection_url:
-        raise ValueError("LAKEBASE_CONNECTION_URL or LAKEBASE_URL environment variable not set")
+        raise ValueError("LAKEBASE_CONNECTION_URL, LAKEBASE_URL, or MOVIE_LAKEBASE_URL environment variable not set")
     
     # Connect directly with the URL (no base64 decoding needed)
     conn = psycopg2.connect(connection_url)

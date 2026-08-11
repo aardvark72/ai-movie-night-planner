@@ -431,7 +431,19 @@ print("=" * 70)
 # Insert movies with embeddings into Lakebase
 # =============================================================================
 
-print(f"\n💾 Loading {len(movies_with_embeddings)} movies to database...")
+# Reconnect to database (connection may have closed during long-running operations)
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+if conn.closed:
+    print("🔄 Reconnecting to database...")
+    conn = psycopg2.connect(LAKEBASE_URL)
+    cursor = conn.cursor()
+    cursor.execute("SET search_path TO movie_night, public")
+    cursor.close()
+    print("✅ Database reconnected\n")
+
+print(f"💾 Loading {len(movies_with_embeddings)} movies to database...")
 print()
 
 inserted_count = 0
